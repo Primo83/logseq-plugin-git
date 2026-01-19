@@ -5,7 +5,7 @@ import {
   LOADING_STYLE,
   SHOW_POPUP_STYLE,
 } from "./constants";
-import { status, inProgress, execGitCommand } from "./git";
+import { status, inProgress, execGitCommand, isRepoClean } from "./git";
 
 export const checkStatus = async () => {
   console.log("Checking status...");
@@ -102,12 +102,6 @@ const parseAheadBehind = (
   return { ahead, behind };
 };
 
-const isRepoClean = async (): Promise<boolean> => {
-  const res = await execGitCommand(["status", "--porcelain"]);
-  if (res.exitCode !== 0) return false;
-  return res.stdout.trim() === "";
-};
-
 let lastAutoPullSkipToastAt = 0;
 const AUTO_PULL_SKIP_TOAST_THROTTLE_MS = 5 * 60 * 1000;
 let lastRemoteAheadToastAt = 0;
@@ -190,38 +184,4 @@ export const fetchAndMaybeAutoPull = async () => {
   }
 
   await checkStatus();
-};
-
-export const syncBeforePush = async (): Promise<boolean> => {
-  if (inProgress()) {
-    console.log("[faiz:] === syncBeforePush Git in progress, skip");
-    return false;
-  }
-
-  const fetchRes = await execGitCommand(["fetch", "-q"]);
-  if (fetchRes.exitCode !== 0) {
-    logseq.UI.showMsg(
-      `Pre-push fetch failed\n${fetchRes.stderr || fetchRes.stdout}`,
-      "error",
-      { timeout: 0 }
-    );
-    return false;
-  }
-
-  const clean = await isRepoClean();
-  const rebaseArgs = clean
-    ? ["rebase", "@{u}"]
-    : ["rebase", "--autostash", "@{u}"];
-
-  const rebaseRes = await execGitCommand(rebaseArgs);
-  if (rebaseRes.exitCode !== 0) {
-    logseq.UI.showMsg(
-      `Pre-push rebase failed\n${rebaseRes.stderr || rebaseRes.stdout}`,
-      "error",
-      { timeout: 0 }
-    );
-    return false;
-  }
-
-  return true;
 };

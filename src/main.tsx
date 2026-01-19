@@ -23,7 +23,6 @@ import {
   checkStatusWithDebounce,
   getPluginStyle,
   fetchAndMaybeAutoPull,
-  syncBeforePush,
 } from "./helper/util";
 import "./index.css";
 
@@ -100,10 +99,7 @@ if (isDevelopment) {
               true,
               commitMessage()
           );
-          if (res.exitCode === 0) {
-            const synced = await syncBeforePush();
-            if (synced) await push(true);
-          }
+          if (res.exitCode === 0) await push(true);
         }
         checkStatus();
       }),

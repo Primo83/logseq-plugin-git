@@ -55,6 +55,74 @@ export const execGitCommand = async (args: string[]) : Promise<IGitResult> => {
 
 export const inProgress = () => _inProgress
 
+export const isRepoClean = async (): Promise<boolean> => {
+  const res = await execGitCommand(["status", "--porcelain"]);
+  if (res.exitCode !== 0) return false;
+  return res.stdout.trim() === "";
+};
+
+const getUpstreamRef = async (): Promise<string | null> => {
+  const res = await execGitCommand([
+    "rev-parse",
+    "--abbrev-ref",
+    "--symbolic-full-name",
+    "@{u}",
+  ]);
+  if (res.exitCode !== 0) return null;
+  const upstream = res.stdout.trim();
+  return upstream ? upstream : null;
+};
+
+export const syncBeforePush = async (showRes = true): Promise<boolean> => {
+  if (inProgress()) {
+    console.log("[faiz:] === syncBeforePush Git in progress, skip");
+    return false;
+  }
+
+  const fetchRes = await execGitCommand(["fetch", "-q"]);
+  if (fetchRes.exitCode !== 0) {
+    if (showRes) {
+      logseq.UI.showMsg(
+        `Pre-push fetch failed\n${fetchRes.stderr || fetchRes.stdout}`,
+        "error",
+        { timeout: 0 }
+      );
+    }
+    return false;
+  }
+
+  const upstream = await getUpstreamRef();
+  if (!upstream) {
+    if (showRes) {
+      logseq.UI.showMsg(
+        `Pre-push rebase skipped (no upstream configured).`,
+        "warning",
+        { timeout: 10 }
+      );
+    }
+    return true;
+  }
+
+  const clean = await isRepoClean();
+  const rebaseArgs = clean
+    ? ["rebase", upstream]
+    : ["rebase", "--autostash", upstream];
+
+  const rebaseRes = await execGitCommand(rebaseArgs);
+  if (rebaseRes.exitCode !== 0) {
+    if (showRes) {
+      logseq.UI.showMsg(
+        `Pre-push rebase failed\n${rebaseRes.stderr || rebaseRes.stdout}`,
+        "error",
+        { timeout: 0 }
+      );
+    }
+    return false;
+  }
+
+  return true;
+};
+
 export const status = async (showRes = true): Promise<IGitResult> => {
   // git status --porcelain | awk '{print $2}'
   // git status --porcelain | wc -l
@@ -167,7 +235,11 @@ export const commit = async (showRes = true, message: string): Promise<IGitResul
 
 // push
 export const push = async (showRes = true): Promise<IGitResult> => {
-  // git push
+  const synced = await syncBeforePush(showRes);
+  if (!synced) {
+    return { exitCode: 1, stdout: "", stderr: "Pre-push sync failed" };
+  }
+
   const res = await execGitCommand(['push'])
   console.log('[faiz:] === git push', res)
   if (showRes) {
