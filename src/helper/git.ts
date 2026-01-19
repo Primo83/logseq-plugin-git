@@ -3,13 +3,48 @@ import type { IGitResult } from "@logseq/libs/dist/LSPlugin.user"
 
 let _inProgress: Promise<IGitResult> | undefined = undefined
 
+const normalizePath = (inputPath: string) =>
+  inputPath.replace(/\\/g, "/").replace(/\/+$/, "");
+
+const getRepoRootPathSetting = () =>
+  (logseq.settings?.repoRootPath as string | undefined)?.trim();
+
+const getGraphPath = async () => (await logseq.App.getCurrentGraph())?.path;
+
+const getScopePathspec = async (): Promise<string> => {
+  const repoRootPath = getRepoRootPathSetting();
+  const graphPath = await getGraphPath();
+
+  if (!repoRootPath || !graphPath) return ".";
+
+  const repo = normalizePath(repoRootPath);
+  const graph = normalizePath(graphPath);
+
+  const repoLower = repo.toLowerCase();
+  const graphLower = graph.toLowerCase();
+
+  if (graphLower === repoLower) return ".";
+
+  const repoPrefix = repo.endsWith("/") ? repo : `${repo}/`;
+  if (!graphLower.startsWith(repoPrefix.toLowerCase())) {
+    // Misconfiguration (graph is outside repo root). Fail safe by returning a
+    // non-existing pathspec so we don't accidentally operate on the whole repo.
+    return "__INVALID_SCOPE__";
+  }
+
+  const rel = graph.slice(repoPrefix.length);
+  return rel || ".";
+};
+
 export const execGitCommand = async (args: string[]) : Promise<IGitResult> => {
   if (_inProgress) await _inProgress
 
   let res
   try {
-    const currentGitFolder = (await logseq.App.getCurrentGraph())?.path
-    const runArgs = currentGitFolder ? ['-C', currentGitFolder, ...args] : args
+    const graphPath = await getGraphPath();
+    const repoRootPath = getRepoRootPathSetting();
+    const gitBasePath = repoRootPath || graphPath;
+    const runArgs = gitBasePath ? ['-C', gitBasePath, ...args] : args
     _inProgress = logseq.Git.execCommand(runArgs)
     res = await _inProgress
   } finally {
@@ -23,7 +58,8 @@ export const inProgress = () => _inProgress
 export const status = async (showRes = true): Promise<IGitResult> => {
   // git status --porcelain | awk '{print $2}'
   // git status --porcelain | wc -l
-  const res =  await execGitCommand(['status', '--porcelain'])
+  const scope = await getScopePathspec();
+  const res =  await execGitCommand(['status', '--porcelain', '--', scope])
   console.log('[faiz:] === git status', res)
   if (showRes) {
     if (res.exitCode === 0) {
@@ -56,7 +92,8 @@ export const log = async (showRes = true): Promise<IGitResult> => {
   // git log --pretty=format:"%h %s" -n 1
   // git log --pretty=format:"%h %ad | %s%d [%an]" --date=short
   // return await logseq.App.execGitCommand(['log', '--pretty=format:"%h %s"'])
-  const res = await execGitCommand(['log', '--pretty=format:"%h %ad | %s [%an]"', '--date=format:"%Y-%m-%d %H:%M:%S"', '--name-status'])
+  const scope = await getScopePathspec();
+  const res = await execGitCommand(['log', '--pretty=format:"%h %ad | %s [%an]"', '--date=format:"%Y-%m-%d %H:%M:%S"', '--name-status', '--', scope])
   console.log('[faiz:] === git log', res)
   if (showRes) {
     if (res.exitCode === 0) {
@@ -98,7 +135,8 @@ export const pullRebase = async (showRes = true): Promise<IGitResult> => {
 
 // git checkout .
 export const checkout = async (showRes = true): Promise<IGitResult> => {
-  const res = await execGitCommand(['checkout', '.'])
+  const scope = await getScopePathspec();
+  const res = await execGitCommand(['checkout', '--', scope])
   console.log('[faiz:] === git checkout .', res)
   if (showRes) {
     if (res.exitCode === 0) {
@@ -112,9 +150,10 @@ export const checkout = async (showRes = true): Promise<IGitResult> => {
 
 // git commit
 export const commit = async (showRes = true, message: string): Promise<IGitResult> => {
-  await execGitCommand(['add', '.'])
-  // git commit -m "message"
-  const res = await execGitCommand(['commit', '-m', message])
+  const scope = await getScopePathspec();
+  await execGitCommand(['add', '-A', '--', scope])
+  // git commit -m "message" -- <scope>
+  const res = await execGitCommand(['commit', '-m', message, '--', scope])
   console.log('[faiz:] === git commit', res)
   if (showRes) {
     if (res.exitCode === 0) {

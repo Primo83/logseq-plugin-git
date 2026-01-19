@@ -122,6 +122,14 @@ export const SETTINGS_SCHEMA: SettingSchemaDesc[] = [
     enumChoices: BUTTONS.map(({ title }) => title),
   },
   {
+    key: "repoRootPath",
+    title: "Repo Root Path (monorepo)",
+    type: "string",
+    default: "",
+    description:
+      "Optional git repo root (e.g. C:/PGMPI-DATA-STRATEGY). Leave empty to use current graph path.",
+  },
+  {
     key: "checkWhenDBChanged",
     title: "Check Status when DB Changed",
     type: "boolean",
