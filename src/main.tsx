@@ -22,6 +22,7 @@ import {
   checkIsSynced,
   checkStatusWithDebounce,
   getPluginStyle,
+  fetchAndMaybeAutoPull,
 } from "./helper/util";
 import "./index.css";
 
@@ -176,6 +177,16 @@ if (isDevelopment) {
 
     if (logseq.settings?.autoCheckSynced) checkIsSynced();
     checkStatusWithDebounce();
+
+    const autoFetchIntervalSeconds =
+      (logseq.settings?.autoFetchIntervalSeconds as number | undefined) ?? 0;
+    if (autoFetchIntervalSeconds > 0) {
+      const intervalMs = Math.max(autoFetchIntervalSeconds, 5) * 1000;
+      fetchAndMaybeAutoPull();
+      setInterval(() => {
+        fetchAndMaybeAutoPull();
+      }, intervalMs);
+    }
 
     if (top) {
       top.document?.addEventListener("visibilitychange", async () => {

@@ -2,6 +2,7 @@ import {
   ACTIVE_STYLE,
   HIDE_POPUP_STYLE,
   INACTIVE_STYLE,
+  LOADING_STYLE,
   SHOW_POPUP_STYLE,
 } from "./constants";
 import { status, inProgress, execGitCommand } from "./git";
@@ -69,10 +70,9 @@ export const checkStatusWithDebounce = debounce(() => {
 }, 2000);
 
 export const isRepoUpTodate = async () => {
-  await execGitCommand(["fetch"]);
+  await execGitCommand(["fetch", "-q"]);
   const local = await execGitCommand(["rev-parse", "HEAD"]);
   const remote = await execGitCommand(["rev-parse", "@{u}"]);
-  logseq.UI.showMsg(`${local.stdout} === ${remote.stdout}`, "success", { timeout: 30 });
   return local.stdout === remote.stdout;
 };
 
@@ -89,4 +89,105 @@ export const checkIsSynced = async () => {
       "warning",
       { timeout: 0 }
     );
+};
+
+const parseAheadBehind = (
+  stdout: string
+): { ahead: number; behind: number } | null => {
+  const parts = stdout.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const ahead = Number(parts[0]);
+  const behind = Number(parts[1]);
+  if (!Number.isFinite(ahead) || !Number.isFinite(behind)) return null;
+  return { ahead, behind };
+};
+
+const isRepoClean = async (): Promise<boolean> => {
+  const res = await execGitCommand(["status", "--porcelain"]);
+  if (res.exitCode !== 0) return false;
+  return res.stdout.trim() === "";
+};
+
+let lastAutoPullSkipToastAt = 0;
+const AUTO_PULL_SKIP_TOAST_THROTTLE_MS = 5 * 60 * 1000;
+let lastRemoteAheadToastAt = 0;
+const REMOTE_AHEAD_TOAST_THROTTLE_MS = 5 * 60 * 1000;
+
+export const fetchAndMaybeAutoPull = async () => {
+  if (inProgress()) {
+    console.log("[faiz:] === fetchAndMaybeAutoPull Git in progress, skip");
+    return;
+  }
+
+  const fetchRes = await execGitCommand(["fetch", "-q"]);
+  if (fetchRes.exitCode !== 0) {
+    console.log("[faiz:] === auto fetch failed", fetchRes);
+    return;
+  }
+
+  const divergedRes = await execGitCommand([
+    "rev-list",
+    "--left-right",
+    "--count",
+    "HEAD...@{u}",
+  ]);
+  if (divergedRes.exitCode !== 0) {
+    console.log("[faiz:] === rev-list failed", divergedRes);
+    return;
+  }
+
+  const counts = parseAheadBehind(divergedRes.stdout);
+  if (!counts) return;
+
+  if (counts.behind <= 0) return;
+
+  if (!logseq.settings?.autoPullWhenRemoteChanged) {
+    if (logseq.settings?.autoCheckSynced) {
+      const now = Date.now();
+      if (now - lastRemoteAheadToastAt > REMOTE_AHEAD_TOAST_THROTTLE_MS) {
+        lastRemoteAheadToastAt = now;
+        logseq.UI.showMsg(
+          `Remote has ${counts.behind} new commit(s).`,
+          "warning",
+          { timeout: 0 }
+        );
+      }
+    }
+    return;
+  }
+
+  const clean = await isRepoClean();
+  if (!clean) {
+    const now = Date.now();
+    if (now - lastAutoPullSkipToastAt > AUTO_PULL_SKIP_TOAST_THROTTLE_MS) {
+      lastAutoPullSkipToastAt = now;
+      logseq.UI.showMsg(
+        `Remote has updates but your repo has local changes. Auto pull skipped.`,
+        "warning",
+        { timeout: 10 }
+      );
+    }
+    return;
+  }
+
+  setPluginStyle(LOADING_STYLE);
+  const strategy = (logseq.settings?.autoPullStrategy as string | undefined) || "Pull Rebase";
+  const pullArgs = strategy === "Pull" ? ["pull"] : ["pull", "--rebase"];
+  const pullRes = await execGitCommand(pullArgs);
+
+  if (pullRes.exitCode === 0) {
+    logseq.UI.showMsg(
+      `Auto pulled ${counts.behind} commit(s) from remote.`,
+      "success",
+      { timeout: 5 }
+    );
+  } else {
+    logseq.UI.showMsg(
+      `Auto pull failed\n${pullRes.stderr || pullRes.stdout}`,
+      "error",
+      { timeout: 0 }
+    );
+  }
+
+  await checkStatus();
 };

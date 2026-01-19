@@ -130,6 +130,31 @@ export const SETTINGS_SCHEMA: SettingSchemaDesc[] = [
       "Optional git repo root (e.g. C:/PGMPI-DATA-STRATEGY). Leave empty to use current graph path.",
   },
   {
+    key: "autoFetchIntervalSeconds",
+    title: "Auto Fetch Interval (seconds)",
+    type: "number",
+    default: 0,
+    description:
+      "Fetch remote every N seconds (0 = disabled), restart logseq to take effect.",
+  },
+  {
+    key: "autoPullWhenRemoteChanged",
+    title: "Auto Pull When Remote Changed",
+    type: "boolean",
+    default: false,
+    description:
+      "Automatically pull when remote has new commits (only when working tree is clean), restart logseq to take effect.",
+  },
+  {
+    key: "autoPullStrategy",
+    title: "Auto Pull Strategy",
+    type: "enum",
+    default: "Pull Rebase",
+    description: "Pull strategy used for auto pull.",
+    enumPicker: "select",
+    enumChoices: ["Pull Rebase", "Pull"],
+  },
+  {
     key: "checkWhenDBChanged",
     title: "Check Status when DB Changed",
     type: "boolean",
