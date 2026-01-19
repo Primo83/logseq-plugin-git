@@ -15,8 +15,11 @@ State:
   - 2026-01-19 19:16:31 Utworzono `CONTINUITY.md` i zebrano kontekst repo.
   - 2026-01-19 19:19:45 Dodano auto `fetchAndMaybeAutoPull()` po `visibilitychange` → `visible` (obok istniejącego autopush na `hidden`).
   - 2026-01-19 19:19:45 `pnpm build` zakończone sukcesem.
+  - 2026-01-19 19:28:47 `pnpm build` zakończone sukcesem (ponownie).
+  - 2026-01-19 19:28:47 Commit: `feat: auto pull on app visible` (7bdafdf).
+  - 2026-01-19 19:28:47 Push do `origin/workspace-root-scope` zakończony sukcesem.
 - Now:
-  - 2026-01-19 19:21:05 Odpowiedź do użytkownika + instrukcja szybkiego testu w Logseq.
+  - 2026-01-19 19:28:47 Zmiana wypchnięta; czeka na weryfikację w Logseq (hide → unhide).
 - Next:
   - Sprawdzić, czy po powrocie okna na wierzch uruchamia się `fetchAndMaybeAutoPull()` (wymaga włączonego `autoFetchIntervalSeconds > 0` lub `autoPullWhenRemoteChanged`).
 - Open questions (UNCONFIRMED if needed):
