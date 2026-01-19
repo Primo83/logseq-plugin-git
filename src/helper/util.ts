@@ -5,7 +5,7 @@ import {
   LOADING_STYLE,
   SHOW_POPUP_STYLE,
 } from "./constants";
-import { status, inProgress, execGitCommand, isRepoClean } from "./git";
+import { status, inProgress, execGitCommand, getUpstreamRef, isRepoClean } from "./git";
 
 export const checkStatus = async () => {
   console.log("Checking status...");
@@ -166,8 +166,21 @@ export const fetchAndMaybeAutoPull = async () => {
 
   setPluginStyle(LOADING_STYLE);
   const strategy = (logseq.settings?.autoPullStrategy as string | undefined) || "Pull Rebase";
-  const pullArgs = strategy === "Pull" ? ["pull"] : ["pull", "--rebase"];
-  const pullRes = await execGitCommand(pullArgs);
+  const upstream = await getUpstreamRef();
+  if (!upstream) {
+    logseq.UI.showMsg(
+      `Auto pull skipped (no upstream configured).`,
+      "warning",
+      { timeout: 10 }
+    );
+    await checkStatus();
+    return;
+  }
+
+  const pullRes =
+    strategy === "Pull"
+      ? await execGitCommand(["merge", upstream])
+      : await execGitCommand(["rebase", upstream]);
 
   if (pullRes.exitCode === 0) {
     logseq.UI.showMsg(

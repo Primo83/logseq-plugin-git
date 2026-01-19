@@ -61,7 +61,7 @@ export const isRepoClean = async (): Promise<boolean> => {
   return res.stdout.trim() === "";
 };
 
-const getUpstreamRef = async (): Promise<string | null> => {
+export const getUpstreamRef = async (): Promise<string | null> => {
   const res = await execGitCommand([
     "rev-parse",
     "--abbrev-ref",
@@ -175,30 +175,91 @@ export const log = async (showRes = true): Promise<IGitResult> => {
 
 // git pull
 export const pull = async (showRes = true): Promise<IGitResult> => {
-  const res = await execGitCommand(['pull'])
-  console.log('[faiz:] === git pull', res)
+  const fetchRes = await execGitCommand(["fetch", "-q"]);
+  if (fetchRes.exitCode !== 0) {
+    if (showRes) {
+      logseq.UI.showMsg(
+        `Git pull failed\n${fetchRes.stderr || fetchRes.stdout}`,
+        "error",
+        { timeout: 0 }
+      );
+    }
+    return fetchRes;
+  }
+
+  const upstream = await getUpstreamRef();
+  if (!upstream) {
+    const res: IGitResult = {
+      exitCode: 1,
+      stdout: "",
+      stderr: "No upstream configured (cannot pull).",
+    };
+    if (showRes) {
+      logseq.UI.showMsg(`Git pull failed\n${res.stderr}`, "error", { timeout: 0 });
+    }
+    return res;
+  }
+
+  const res = await execGitCommand(["merge", upstream]);
+  console.log("[faiz:] === git pull (fetch+merge)", res);
   if (showRes) {
     if (res.exitCode === 0) {
-      logseq.UI.showMsg('Git pull success')
+      logseq.UI.showMsg("Git pull success");
     } else {
-      logseq.UI.showMsg(`Git pull failed\n${res.stderr}`, 'error')
+      logseq.UI.showMsg(`Git pull failed\n${res.stderr || res.stdout}`, "error", {
+        timeout: 0,
+      });
     }
   }
-  return res
+  return res;
 }
 
 // git pull --rebase
 export const pullRebase = async (showRes = true): Promise<IGitResult> => {
-  const res = await execGitCommand(['pull', '--rebase'])
-  console.log('[faiz:] === git pull --rebase', res)
+  const fetchRes = await execGitCommand(["fetch", "-q"]);
+  if (fetchRes.exitCode !== 0) {
+    if (showRes) {
+      logseq.UI.showMsg(
+        `Git pull --rebase failed\n${fetchRes.stderr || fetchRes.stdout}`,
+        "error",
+        { timeout: 0 }
+      );
+    }
+    return fetchRes;
+  }
+
+  const upstream = await getUpstreamRef();
+  if (!upstream) {
+    const res: IGitResult = {
+      exitCode: 1,
+      stdout: "",
+      stderr: "No upstream configured (cannot pull --rebase).",
+    };
+    if (showRes) {
+      logseq.UI.showMsg(`Git pull --rebase failed\n${res.stderr}`, "error", {
+        timeout: 0,
+      });
+    }
+    return res;
+  }
+
+  const clean = await isRepoClean();
+  const rebaseArgs = clean
+    ? ["rebase", upstream]
+    : ["rebase", "--autostash", upstream];
+
+  const res = await execGitCommand(rebaseArgs);
+  console.log("[faiz:] === git pull --rebase (fetch+rebase)", res);
   if (showRes) {
     if (res.exitCode === 0) {
-      logseq.UI.showMsg('Git pull --rebase success')
+      logseq.UI.showMsg("Git pull --rebase success");
     } else {
-      logseq.UI.showMsg(`Git pull --rebase failed\n${res.stderr}`, 'error')
+      logseq.UI.showMsg(`Git pull --rebase failed\n${res.stderr || res.stdout}`, "error", {
+        timeout: 0,
+      });
     }
   }
-  return res
+  return res;
 }
 
 // git checkout .
