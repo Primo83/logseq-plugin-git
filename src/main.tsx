@@ -194,6 +194,12 @@ if (isDevelopment) {
 
         if (visibilityState === "visible") {
           if (logseq.settings?.autoCheckSynced) checkIsSynced();
+          if (
+            autoFetchIntervalSeconds > 0 ||
+            logseq.settings?.autoPullWhenRemoteChanged
+          ) {
+            fetchAndMaybeAutoPull();
+          }
         } else if (visibilityState === "hidden") {
           // logseq.UI.showMsg(`Page is hidden: ${new Date()}`, 'success', { timeout: 0 })
           // noChange void
