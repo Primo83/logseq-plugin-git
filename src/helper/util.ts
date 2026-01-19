@@ -191,3 +191,37 @@ export const fetchAndMaybeAutoPull = async () => {
 
   await checkStatus();
 };
+
+export const syncBeforePush = async (): Promise<boolean> => {
+  if (inProgress()) {
+    console.log("[faiz:] === syncBeforePush Git in progress, skip");
+    return false;
+  }
+
+  const fetchRes = await execGitCommand(["fetch", "-q"]);
+  if (fetchRes.exitCode !== 0) {
+    logseq.UI.showMsg(
+      `Pre-push fetch failed\n${fetchRes.stderr || fetchRes.stdout}`,
+      "error",
+      { timeout: 0 }
+    );
+    return false;
+  }
+
+  const clean = await isRepoClean();
+  const rebaseArgs = clean
+    ? ["rebase", "@{u}"]
+    : ["rebase", "--autostash", "@{u}"];
+
+  const rebaseRes = await execGitCommand(rebaseArgs);
+  if (rebaseRes.exitCode !== 0) {
+    logseq.UI.showMsg(
+      `Pre-push rebase failed\n${rebaseRes.stderr || rebaseRes.stdout}`,
+      "error",
+      { timeout: 0 }
+    );
+    return false;
+  }
+
+  return true;
+};
