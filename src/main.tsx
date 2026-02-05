@@ -118,6 +118,14 @@ if (isDevelopment) {
       }),
     };
 
+
+    const autoPushDebounced = debounce(() => {
+      if (logseq.settings?.autoPush) {
+        console.log("[logseq-git] autoPush (debounced)");
+        operations.commitAndPush();
+      }
+    }, 15000);
+
     logseq.provideModel(operations);
 
     logseq.App.registerUIItem("toolbar", {
@@ -167,10 +175,12 @@ if (isDevelopment) {
 
     logseq.App.onRouteChanged(async () => {
       checkStatusWithDebounce();
+      if (logseq.settings?.autoPush) autoPushDebounced();
     });
     if (logseq.settings?.checkWhenDBChanged) {
       logseq.DB.onChanged(({ blocks, txData, txMeta }) => {
         checkStatusWithDebounce();
+        if (logseq.settings?.autoPush) autoPushDebounced();
       });
     }
 
