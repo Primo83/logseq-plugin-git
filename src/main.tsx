@@ -163,7 +163,7 @@ if (isDevelopment) {
         console.log("[logseq-git] autoPush (debounced)");
         operations.commitAndPush();
       }
-    }, 5000);
+    }, 15000);
 
     logseq.provideModel(operations);
 
