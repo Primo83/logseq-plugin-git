@@ -30,7 +30,7 @@ import "./index.css";
 // https://github.com/haydenull/logseq-plugin-git/issues/48
 try {
   // @ts-ignore
-  top.logseq.sdk.git.exec_command(['status'])
+  logseq.sdk.git.exec_command(['status'])
 } catch (e) {
   // @ts-ignore
   logseq.Git['execCommand'] = async function (args: string[]) {
@@ -40,6 +40,100 @@ try {
 }
 
 const isDevelopment = import.meta.env.DEV
+
+const getButtons = () => {
+  const settingsButtons = (logseq.settings?.buttons as string[] | undefined)
+  const defaultButtons = (SETTINGS_SCHEMA.find((s) => s.key === "buttons")
+    ?.default as string[] | undefined)
+  const titles = settingsButtons && settingsButtons.length
+    ? settingsButtons
+    : (defaultButtons ?? [])
+  return titles
+    .map((title) => BUTTONS.find((b) => b.title === title))
+    .filter(Boolean)
+}
+
+const canAccessTopDocument = () => {
+  try {
+    // Accessing top.document can throw on Linux (cross-origin)
+    // @ts-ignore
+    return typeof top !== "undefined" && !!top?.document?.body
+  } catch (e) {
+    return false
+  }
+}
+
+const renderButtonsProvideUI = (operations?: Record<string, any>) => {
+  const buttons = getButtons()
+  if (!buttons?.length) return
+
+  const buttonsHtml = buttons
+    .map((button: any) =>
+      `<button data-on-click="${button?.event}" class="ui__button plugin-git-${button?.key} bg-indigo-600 hover:bg-indigo-700 focus:border-indigo-700 active:bg-indigo-700 text-center text-sm p-1" style="margin: 4px 0; color: #fff; background-color:#4f46e5; border:1px solid #4338ca; border-radius:6px;">${button?.title}</button>`
+    )
+    .join("\n")
+
+  logseq.provideUI({
+    key: "logseq-git-popup",
+    path: "body",
+    replace: true,
+    template: `
+      <div class="plugin-git-container">
+        <div class="plugin-git-mask" data-on-click="hidePopup"></div>
+        <div class="plugin-git-popup flex flex-col">
+          ${buttonsHtml}
+        </div>
+      </div>
+    `,
+  })
+}
+
+const renderButtonsLegacy = (operations?: Record<string, any>) => {
+  const buttons = getButtons()
+  if (!buttons?.length) return
+
+  const parser = new DOMParser()
+  const doc = parser.parseFromString(
+    `
+          <div class="plugin-git-container">
+            <div class="plugin-git-mask"></div>
+            <div class="plugin-git-popup flex flex-col">
+              ${buttons
+                .map(
+                  (button: any) =>
+                    `<button class="ui__button plugin-git-${button?.key} bg-indigo-600 hover:bg-indigo-700 focus:border-indigo-700 active:bg-indigo-700 text-center text-sm p-1" style="margin: 4px 0; color: #fff; background-color:#4f46e5; border:1px solid #4338ca; border-radius:6px;">${button?.title}</button>`
+                )
+                .join("\n")}
+          </div>
+          `,
+    "text/html"
+  )
+
+  // @ts-ignore
+  const container = top?.document?.querySelector(".plugin-git-container")
+  // @ts-ignore
+  if (container) top?.document?.body.removeChild(container)
+  // @ts-ignore
+  top?.document?.body.appendChild(doc.body.childNodes?.[0]?.cloneNode(true))
+  // @ts-ignore
+  top?.document
+    ?.querySelector(".plugin-git-mask")
+    ?.addEventListener("click", hidePopup)
+  buttons.forEach((button: any) => {
+    // @ts-ignore
+    top?.document
+      ?.querySelector(`.plugin-git-${button?.key}`)
+      ?.addEventListener("click", operations?.[button!?.event])
+  })
+}
+
+const renderButtons = (operations?: Record<string, any>) => {
+  if (canAccessTopDocument()) {
+    renderButtonsLegacy(operations)
+  } else {
+    renderButtonsProvideUI(operations)
+  }
+}
 
 if (isDevelopment) {
   renderApp("browser");
@@ -111,6 +205,7 @@ if (isDevelopment) {
       }),
       showPopup: debounce(async function () {
         console.log("[faiz:] === showPopup click");
+        renderButtons(operations);
         showPopup();
       }),
       hidePopup: debounce(function () {
@@ -118,6 +213,14 @@ if (isDevelopment) {
         hidePopup();
       }),
     };
+
+
+    const autoPushDebounced = debounce(() => {
+      if (logseq.settings?.autoPush) {
+        console.log("[logseq-git] autoPush (debounced)");
+        operations.commitAndPush();
+      }
+    }, 15000);
 
     logseq.provideModel(operations);
 
@@ -168,10 +271,12 @@ if (isDevelopment) {
 
     logseq.App.onRouteChanged(async () => {
       checkStatusWithDebounce();
+      if (logseq.settings?.autoPush) autoPushDebounced();
     });
     if (logseq.settings?.checkWhenDBChanged) {
       logseq.DB.onChanged(({ blocks, txData, txMeta }) => {
         checkStatusWithDebounce();
+        if (logseq.settings?.autoPush) autoPushDebounced();
       });
     }
 
@@ -187,6 +292,40 @@ if (isDevelopment) {
         fetchAndMaybeAutoPull();
       }, intervalMs);
     }
+
+    document.addEventListener("visibilitychange", async () => {
+      const visibilityState = document.visibilityState;
+
+      if (visibilityState === "visible") {
+        if (logseq.settings?.autoCheckSynced) checkIsSynced();
+        if (
+          autoFetchIntervalSeconds > 0 ||
+          logseq.settings?.autoPullWhenRemoteChanged
+        ) {
+          fetchAndMaybeAutoPull();
+        }
+      } else if (visibilityState === "hidden") {
+        if (logseq.settings?.autoPush) {
+          autoPushDebounced();
+        }
+      }
+    });
+
+    window.addEventListener("blur", () => {
+      if (logseq.settings?.autoPush) {
+        autoPushDebounced();
+      }
+    });
+
+    window.addEventListener("focus", () => {
+      if (logseq.settings?.autoCheckSynced) checkIsSynced();
+      if (
+        autoFetchIntervalSeconds > 0 ||
+        logseq.settings?.autoPullWhenRemoteChanged
+      ) {
+        fetchAndMaybeAutoPull();
+      }
+    });
 
     if (top) {
       top.document?.addEventListener("visibilitychange", async () => {
