@@ -30,7 +30,7 @@ import "./index.css";
 // https://github.com/haydenull/logseq-plugin-git/issues/48
 try {
   // @ts-ignore
-  top.logseq.sdk.git.exec_command(['status'])
+  logseq.sdk.git.exec_command(['status'])
 } catch (e) {
   // @ts-ignore
   logseq.Git['execCommand'] = async function (args: string[]) {
@@ -40,6 +40,43 @@ try {
 }
 
 const isDevelopment = import.meta.env.DEV
+
+const getButtons = () => {
+  const settingsButtons = (logseq.settings?.buttons as string[] | undefined)
+  const defaultButtons = (SETTINGS_SCHEMA.find((s) => s.key === "buttons")
+    ?.default as string[] | undefined)
+  const titles = settingsButtons && settingsButtons.length
+    ? settingsButtons
+    : (defaultButtons ?? [])
+  return titles
+    .map((title) => BUTTONS.find((b) => b.title === title))
+    .filter(Boolean)
+}
+
+const renderButtons = (operations?: Record<string, any>) => {
+  const buttons = getButtons()
+  if (!buttons?.length) return
+
+  const buttonsHtml = buttons
+    .map((button: any) =>
+      `<button data-on-click="${button?.event}" class="ui__button plugin-git-${button?.key} bg-indigo-600 hover:bg-indigo-700 focus:border-indigo-700 active:bg-indigo-700 text-center text-sm p-1" style="margin: 4px 0; color: #fff; background-color:#4f46e5; border:1px solid #4338ca; border-radius:6px;">${button?.title}</button>`
+    )
+    .join("\n")
+
+  logseq.provideUI({
+    key: "logseq-git-popup",
+    path: "body",
+    replace: true,
+    template: `
+      <div class="plugin-git-container">
+        <div class="plugin-git-mask" data-on-click="hidePopup"></div>
+        <div class="plugin-git-popup flex flex-col">
+          ${buttonsHtml}
+        </div>
+      </div>
+    `,
+  })
+}
 
 if (isDevelopment) {
   renderApp("browser");
@@ -111,6 +148,7 @@ if (isDevelopment) {
       }),
       showPopup: debounce(async function () {
         console.log("[faiz:] === showPopup click");
+        renderButtons(operations);
         showPopup();
       }),
       hidePopup: debounce(function () {
@@ -128,43 +166,12 @@ if (isDevelopment) {
     });
     logseq.useSettingsSchema(SETTINGS_SCHEMA);
     setTimeout(() => {
-      const buttons = (logseq.settings?.buttons as string[])
-        ?.map((title) => BUTTONS.find((b) => b.title === title))
-        .filter(Boolean);
-      if (top && buttons?.length) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(
-          `
-          <div class="plugin-git-container">
-            <div class="plugin-git-mask"></div>
-            <div class="plugin-git-popup flex flex-col">
-              ${buttons
-                .map(
-                  (button) =>
-                    `<button class="ui__button plugin-git-${button?.key} bg-indigo-600 hover:bg-indigo-700 focus:border-indigo-700 active:bg-indigo-700 text-center text-sm p-1" style="margin: 4px 0; color: #fff;">${button?.title}</button>`
-                )
-                .join("\n")}
-          </div>
-          `,
-          "text/html"
-        );
-        // remove .plugin-git-container if exists
-        const container = top?.document?.querySelector(".plugin-git-container");
-        console.log("[faiz:] === container", container);
-        if (container) top?.document?.body.removeChild(container);
-        top?.document?.body.appendChild(
-          doc.body.childNodes?.[0]?.cloneNode(true)
-        );
-        top?.document
-          ?.querySelector(".plugin-git-mask")
-          ?.addEventListener("click", hidePopup);
-        buttons.forEach((button) => {
-          top?.document
-            ?.querySelector(`.plugin-git-${button?.key}`)
-            ?.addEventListener("click", operations?.[button!?.event]);
-        });
-      }
+      renderButtons(operations);
     }, 1000);
+
+    // re-render buttons when settings change (if supported by logseq)
+    // @ts-ignore
+    logseq.onSettingsChanged?.(() => renderButtons(operations));
 
     logseq.App.onRouteChanged(async () => {
       checkStatusWithDebounce();
@@ -188,9 +195,8 @@ if (isDevelopment) {
       }, intervalMs);
     }
 
-    if (top) {
-      top.document?.addEventListener("visibilitychange", async () => {
-        const visibilityState = top?.document?.visibilityState;
+    document.addEventListener("visibilitychange", async () => {
+        const visibilityState = document.visibilityState;
 
         if (visibilityState === "visible") {
           if (logseq.settings?.autoCheckSynced) checkIsSynced();
@@ -209,7 +215,6 @@ if (isDevelopment) {
           }
         }
       });
-    }
 
     logseq.App.registerCommandPalette(
       {
