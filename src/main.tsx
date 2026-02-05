@@ -175,6 +175,9 @@ if (isDevelopment) {
 
     logseq.App.onRouteChanged(async () => {
       checkStatusWithDebounce();
+      if (logseq.settings?.autoPush) {
+        operations.commitAndPush();
+      }
     });
     if (logseq.settings?.checkWhenDBChanged) {
       logseq.DB.onChanged(({ blocks, txData, txMeta }) => {
@@ -215,6 +218,23 @@ if (isDevelopment) {
           }
         }
       });
+
+    window.addEventListener("blur", () => {
+      if (logseq.settings?.autoPush) {
+        operations.commitAndPush();
+      }
+    });
+
+    window.addEventListener("focus", () => {
+      if (logseq.settings?.autoCheckSynced) checkIsSynced();
+      if (
+        autoFetchIntervalSeconds > 0 ||
+        logseq.settings?.autoPullWhenRemoteChanged
+      ) {
+        fetchAndMaybeAutoPull();
+      }
+    });
+
 
     logseq.App.registerCommandPalette(
       {
