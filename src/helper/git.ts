@@ -2,6 +2,10 @@
 import type { IGitResult } from "@logseq/libs/dist/LSPlugin.user"
 
 let _inProgress: Promise<IGitResult> | undefined = undefined
+let _directGitRunner:
+  | ((args: string[]) => Promise<IGitResult | undefined>)
+  | undefined
+  | null = undefined
 
 const normalizePath = (inputPath: string) =>
   inputPath.replace(/\\/g, "/").replace(/\/+$/, "");
@@ -11,8 +15,154 @@ const getRepoRootPathSetting = () =>
 
 const getGraphPath = async () => (await logseq.App.getCurrentGraph())?.path;
 
+const getNodeRequire = () => {
+  const globalObject = globalThis as any;
+  const candidates = [
+    () => globalObject.require,
+    () => globalObject.window?.require,
+    () => globalObject.top?.require,
+    () => globalObject.parent?.require,
+    () => globalObject.process?.mainModule?.require,
+    () => globalObject.logseq?.Experiments?.ensureHostScope?.()?.require,
+    () =>
+      globalObject.logseq
+        ?.Experiments
+        ?.ensureHostScope
+        ?.()
+        ?.process
+        ?.mainModule
+        ?.require,
+  ];
+
+  for (const getCandidate of candidates) {
+    try {
+      const candidate = getCandidate();
+      if (typeof candidate === "function") return candidate;
+    } catch (error) {
+      // Cross-origin access can throw in some Logseq plugin contexts.
+    }
+  }
+
+  return undefined;
+};
+
+const getDirectGitRunner = () => {
+  if (_directGitRunner !== undefined) return _directGitRunner;
+
+  const nodeRequire = getNodeRequire();
+  if (!nodeRequire) {
+    _directGitRunner = null;
+    return _directGitRunner;
+  }
+
+  try {
+    const childProcess = nodeRequire("child_process");
+    const execFile = childProcess?.execFile;
+    if (typeof execFile !== "function") {
+      _directGitRunner = null;
+      return _directGitRunner;
+    }
+
+    _directGitRunner = (args: string[]) =>
+      new Promise((resolve) => {
+        execFile(
+          "git",
+          args,
+          { windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+          (error: any, stdout: string | Buffer, stderr: string | Buffer) => {
+            if (error?.code === "ENOENT") {
+              resolve(undefined);
+              return;
+            }
+
+            resolve({
+              exitCode:
+                typeof error?.code === "number" ? error.code : error ? 1 : 0,
+              stdout: stdout?.toString() ?? "",
+              stderr: stderr?.toString() || error?.message || "",
+            });
+          }
+        );
+      });
+  } catch (error) {
+    _directGitRunner = null;
+  }
+
+  return _directGitRunner;
+};
+
+const wrapExecGitCommand = async (args: string[]): Promise<IGitResult> => {
+  const directGitRunner = getDirectGitRunner();
+  const directRes = directGitRunner ? await directGitRunner(args) : undefined;
+  if (directRes) return directRes;
+
+  return logseq.App
+    .execGitCommand(args)
+    .then((stdout) => ({
+      exitCode: stdout === undefined ? 1 : 0,
+      stdout: stdout ?? "",
+      stderr: "",
+    }))
+    .catch((error) => ({
+      exitCode: 1,
+      stdout: "",
+      stderr: error instanceof Error ? error.message : String(error),
+    }));
+};
+
+const dirname = (inputPath: string): string | undefined => {
+  const path = normalizePath(inputPath);
+  const driveRootMatch = path.match(/^[A-Za-z]:\/?$/);
+  if (driveRootMatch) return undefined;
+
+  const slashIndex = path.lastIndexOf("/");
+  if (slashIndex <= 0) return undefined;
+  if (slashIndex === 2 && path[1] === ":") return path.slice(0, slashIndex + 1);
+  return path.slice(0, slashIndex);
+};
+
+const isPathInside = (childPath: string, parentPath: string) => {
+  const child = normalizePath(childPath).toLowerCase();
+  const parent = normalizePath(parentPath).toLowerCase();
+  if (child === parent) return true;
+  const parentPrefix = parent.endsWith("/") ? parent : `${parent}/`;
+  return child.startsWith(parentPrefix);
+};
+
+const getGitTopLevel = async (basePath: string): Promise<string | undefined> => {
+  const res = await wrapExecGitCommand([
+    "-C",
+    basePath,
+    "rev-parse",
+    "--show-toplevel",
+  ]);
+
+  if (res.exitCode !== 0) return undefined;
+  const topLevel = res.stdout.trim();
+  return topLevel ? normalizePath(topLevel) : undefined;
+};
+
+const getEffectiveRepoRootPath = async (): Promise<string | undefined> => {
+  const configuredRepoRootPath = getRepoRootPathSetting();
+  if (configuredRepoRootPath) return configuredRepoRootPath;
+
+  const graphPath = await getGraphPath();
+  if (!graphPath) return undefined;
+
+  const normalizedGraphPath = normalizePath(graphPath);
+  const parentPath = dirname(normalizedGraphPath);
+  if (parentPath) {
+    const parentRepoRoot = await getGitTopLevel(parentPath);
+    if (parentRepoRoot && isPathInside(normalizedGraphPath, parentRepoRoot)) {
+      return parentRepoRoot;
+    }
+  }
+
+  return (await getGitTopLevel(normalizedGraphPath)) ?? normalizedGraphPath;
+};
+
 const getScopePathspec = async (): Promise<string> => {
-  const repoRootPath = getRepoRootPathSetting();
+  const repoRootPath = await getEffectiveRepoRootPath();
   const graphPath = await getGraphPath();
 
   if (!repoRootPath || !graphPath) return ".";
@@ -39,18 +189,17 @@ const getScopePathspec = async (): Promise<string> => {
 export const execGitCommand = async (args: string[]) : Promise<IGitResult> => {
   if (_inProgress) await _inProgress
 
-  let res
+  let res: IGitResult
   try {
     const graphPath = await getGraphPath();
-    const repoRootPath = getRepoRootPathSetting();
-    const gitBasePath = repoRootPath || graphPath;
+    const gitBasePath = (await getEffectiveRepoRootPath()) ?? graphPath;
     const runArgs = gitBasePath ? ['-C', gitBasePath, ...args] : args
-    _inProgress = logseq.Git.execCommand(runArgs)
+    _inProgress = wrapExecGitCommand(runArgs)
     res = await _inProgress
   } finally {
     _inProgress = undefined
   }
-    return res
+  return res
 }
 
 export const inProgress = () => _inProgress

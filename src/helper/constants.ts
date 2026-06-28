@@ -127,7 +127,7 @@ export const SETTINGS_SCHEMA: SettingSchemaDesc[] = [
     type: "string",
     default: "",
     description:
-      "Optional git repo root (e.g. C:/PGMPI-DATA-STRATEGY). Leave empty to use current graph path.",
+      "Optional git repo root (e.g. C:/PGMPI-DATA-STRATEGY). Leave empty to auto-detect the parent repo or use the current graph path.",
   },
   {
     key: "autoFetchIntervalSeconds",
