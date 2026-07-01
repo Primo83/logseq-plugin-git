@@ -52,10 +52,12 @@ State:
   - 2026-07-01 15:00:00 Europe/Warsaw: Helper uruchomiony na `127.0.0.1:17838`; `/health` dziala, `git status --short --branch` przez `/git` zwraca `## main...origin/main`, a sciezka poza allowed root jest blokowana HTTP 400.
   - 2026-07-01 15:03:40 Europe/Warsaw: `corepack pnpm@8.6.10 build` zakonczone sukcesem; Logseq zrestartowany, po minucie smoke w `main.log` brak nowych bledow `[Git]`, `Permission denied`, `unable to move`, `invalid gitfile` i `fatal`.
   - 2026-07-01 15:03:40 Europe/Warsaw: Dodano i uruchomiono odtwarzalny autostart per-user przez `helper/install-logseq-git-helper-startup.ps1`; skrót Startup wskazuje launcher helpera dla `C:\PGMPI-DATA-STRATEGY` na porcie `17838`.
+  - 2026-07-01 15:05:42 Europe/Warsaw: Commit `0debc7a fix: run git through local helper` wypchniety na `origin/workspace-root-scope`; weryfikacja `HEAD...origin/workspace-root-scope = 0 0`.
+  - 2026-07-01 15:05:42 Europe/Warsaw: Parent repo notatek `C:\PGMPI-DATA-STRATEGY` sprawdzone po fetchu: `HEAD...origin/main = 0 0`, helper `/health` OK, swieze logi Logseq po 15:03 bez nowych bledow Git.
 - Now:
-  - 2026-07-01 15:03:40 Europe/Warsaw: Gotowe do commita i pushu source+dist na `origin/workspace-root-scope`.
+  - 2026-07-01 15:05:42 Europe/Warsaw: Done.
 - Next:
-  - Commit i push source+dist na `origin/workspace-root-scope`; potem sprawdzic `HEAD...origin/workspace-root-scope = 0 0`.
+  - Brak obowiazkowych krokow; po restarcie Windows helper powinien wystartowac ze skrotu Startup.
 - Working set:
   - `src/helper/git.ts`
   - `src/helper/constants.ts`
