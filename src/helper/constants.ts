@@ -130,6 +130,14 @@ export const SETTINGS_SCHEMA: SettingSchemaDesc[] = [
       "Optional git repo root (e.g. C:/PGMPI-DATA-STRATEGY). Leave empty to auto-detect the parent repo or use the current graph path.",
   },
   {
+    key: "gitHelperUrl",
+    title: "Git Helper URL",
+    type: "string",
+    default: "http://127.0.0.1:17838/git",
+    description:
+      "Local helper endpoint used when Logseq cannot expose system git directly. Leave default unless you changed the helper port.",
+  },
+  {
     key: "autoFetchIntervalSeconds",
     title: "Auto Fetch Interval (seconds)",
     type: "number",

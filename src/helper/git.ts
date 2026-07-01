@@ -13,6 +13,9 @@ const normalizePath = (inputPath: string) =>
 const getRepoRootPathSetting = () =>
   (logseq.settings?.repoRootPath as string | undefined)?.trim();
 
+const getGitHelperUrlSetting = () =>
+  (logseq.settings?.gitHelperUrl as string | undefined)?.trim();
+
 const getGraphPath = async () => (await logseq.App.getCurrentGraph())?.path;
 
 const getNodeRequire = () => {
@@ -91,23 +94,55 @@ const getDirectGitRunner = () => {
   return _directGitRunner;
 };
 
+const execGitCommandViaHelper = async (
+  args: string[]
+): Promise<IGitResult | undefined> => {
+  const helperUrl =
+    getGitHelperUrlSetting() || "http://127.0.0.1:17838/git";
+
+  if (typeof fetch !== "function") return undefined;
+
+  try {
+    const response = await fetch(helperUrl, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ args }),
+    });
+
+    if (!response.ok) {
+      return {
+        exitCode: 1,
+        stdout: "",
+        stderr: `Git helper request failed: HTTP ${response.status}`,
+      };
+    }
+
+    const payload = await response.json();
+    return {
+      exitCode:
+        typeof payload?.exitCode === "number" ? payload.exitCode : 1,
+      stdout: typeof payload?.stdout === "string" ? payload.stdout : "",
+      stderr: typeof payload?.stderr === "string" ? payload.stderr : "",
+    };
+  } catch (error) {
+    return undefined;
+  }
+};
+
 const wrapExecGitCommand = async (args: string[]): Promise<IGitResult> => {
   const directGitRunner = getDirectGitRunner();
   const directRes = directGitRunner ? await directGitRunner(args) : undefined;
   if (directRes) return directRes;
 
-  return logseq.App
-    .execGitCommand(args)
-    .then((stdout) => ({
-      exitCode: stdout === undefined ? 1 : 0,
-      stdout: stdout ?? "",
-      stderr: "",
-    }))
-    .catch((error) => ({
-      exitCode: 1,
-      stdout: "",
-      stderr: error instanceof Error ? error.message : String(error),
-    }));
+  const helperRes = await execGitCommandViaHelper(args);
+  if (helperRes) return helperRes;
+
+  return {
+    exitCode: 1,
+    stdout: "",
+    stderr:
+      "System git is unavailable in this Logseq plugin context and the local Git helper is not running.",
+  };
 };
 
 const dirname = (inputPath: string): string | undefined => {
